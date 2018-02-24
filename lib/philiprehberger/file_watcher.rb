@@ -16,12 +16,14 @@ module Philiprehberger
     # @param paths [Array<String>, String] directories or files to watch
     # @param interval [Float] polling interval in seconds (default: 1.0)
     # @param glob [String] glob pattern for matching files (default: "**/*")
-    # @yield [Array<Change>] called with an array of changes on each poll cycle
+    # @param exclude [Array<String>] glob patterns to exclude from watching (default: [])
+    # @param debounce [Float, nil] debounce interval in seconds (default: nil)
+    # @yield [Change] called with a change on each detected file change
     # @return [void]
-    def self.watch(paths, interval: 1.0, glob: '**/*', &block)
+    def self.watch(paths, interval: 1.0, glob: '**/*', exclude: [], debounce: nil, &block)
       raise ArgumentError, 'a block is required' unless block
 
-      watcher = Watcher.new(paths, interval: interval, glob: glob)
+      watcher = Watcher.new(paths, interval: interval, glob: glob, exclude: exclude, debounce: debounce)
       watcher.on(:any, &block)
       watcher.start
 
