@@ -159,7 +159,7 @@ RSpec.describe Philiprehberger::FileWatcher do
 
     it 'rejects invalid event types' do
       watcher = described_class.new(tmpdir)
-      expect { watcher.on(:bogus) {} }.to raise_error(ArgumentError, /invalid event type/) # rubocop:disable Lint/EmptyBlock
+      expect { watcher.on(:bogus) {} }.to raise_error(ArgumentError, /invalid event type/)
     end
   end
 end
