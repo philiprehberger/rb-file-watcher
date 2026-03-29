@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-28
+
+### Added
+
+- Exclusion patterns via `exclude:` option to filter out files matching glob patterns
+- Change debouncing via `debounce:` option to coalesce rapid consecutive changes
+- Error callback via `on(:error)` for graceful handling of filesystem errors
+- Snapshot method `Watcher#snapshot` returning tracked files with mtime and size
+- Batch change reporting via `on(:batch)` callback receiving all changes per polling cycle
+
 ## [0.1.1] - 2026-03-26
 
 ### Added

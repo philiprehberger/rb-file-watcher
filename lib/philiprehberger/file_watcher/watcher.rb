@@ -12,21 +12,28 @@ module Philiprehberger
       # @param paths [Array<String>, String] directories or files to watch
       # @param interval [Float] polling interval in seconds (default: 1.0)
       # @param glob [String] glob pattern for matching files (default: "**/*")
-      def initialize(paths, interval: 1.0, glob: '**/*')
+      # @param exclude [Array<String>] glob patterns to exclude from watching (default: [])
+      # @param debounce [Float, nil] debounce interval in seconds (default: nil)
+      def initialize(paths, interval: 1.0, glob: '**/*', exclude: [], debounce: nil)
         @paths = Array(paths)
         @interval = interval
         @glob = glob
-        @callbacks = { created: [], modified: [], deleted: [], any: [] }
+        @exclude = Array(exclude)
+        @debounce = debounce
+        @callbacks = { created: [], modified: [], deleted: [], any: [], error: [], batch: [] }
         @mutex = Mutex.new
         @thread = nil
         @running = false
         @snapshot = {}
+        @pending_debounce = {}
       end
 
       # Register a callback for a specific change type.
       #
-      # @param type [Symbol] one of :created, :modified, :deleted, or :any
+      # @param type [Symbol] one of :created, :modified, :deleted, :any, :error, or :batch
       # @yield [Change] called when a matching change is detected
+      # @yield [Exception, String] for :error, called with (exception, path)
+      # @yield [Array<Change>] for :batch, called with all changes from one polling cycle
       # @return [self]
       # @raise [ArgumentError] if the type is not valid
       def on(type, &block)
@@ -62,12 +69,29 @@ module Philiprehberger
         @mutex.synchronize { @running = false }
         @thread&.join
         @thread = nil
+        flush_debounced_changes
         self
       end
 
       # @return [Boolean] true if the watcher is currently running
       def running?
         @mutex.synchronize { @running }
+      end
+
+      # Return a hash of all currently tracked files with their mtime and size.
+      #
+      # @return [Hash{String => Hash}] mapping of path to {mtime:, size:}
+      def snapshot
+        @mutex.synchronize do
+          @snapshot.each_with_object({}) do |(path, mtime), result|
+            size = begin
+              File.size(path)
+            rescue StandardError
+              0
+            end
+            result[path] = { mtime: mtime, size: size }
+          end
+        end
       end
 
       private
@@ -78,7 +102,15 @@ module Philiprehberger
           next unless running?
 
           changes = detect_changes
-          fire_callbacks(changes) unless changes.empty?
+          next if changes.empty?
+
+          if @debounce
+            enqueue_debounced(changes)
+            flush_ready_debounced
+          else
+            fire_batch_callbacks(changes)
+            fire_callbacks(changes)
+          end
         end
       end
 
@@ -104,22 +136,79 @@ module Philiprehberger
       end
 
       def take_snapshot
-        @paths.each_with_object({}) do |base_path, snapshot|
+        @paths.each_with_object({}) do |base_path, snap|
           expanded = File.expand_path(base_path)
           if File.file?(expanded)
-            snapshot[expanded] = File.mtime(expanded)
+            record_file(expanded, snap)
           elsif File.directory?(expanded)
-            scan_directory(expanded, snapshot)
+            scan_directory(expanded, snap)
+          end
+        rescue SystemCallError => e
+          fire_error_callbacks(e, expanded || base_path)
+        end
+      end
+
+      def scan_directory(dir, snap)
+        Dir.glob(File.join(dir, @glob)).each do |file|
+          next unless File.file?(file)
+          next if excluded?(file)
+
+          record_file(file, snap)
+        rescue SystemCallError => e
+          fire_error_callbacks(e, file)
+        end
+      end
+
+      def record_file(file, snap)
+        snap[file] = File.mtime(file)
+      rescue SystemCallError => e
+        fire_error_callbacks(e, file)
+      end
+
+      def excluded?(file)
+        return false if @exclude.empty?
+
+        @exclude.any? do |pattern|
+          File.fnmatch?(pattern, file, File::FNM_PATHNAME | File::FNM_DOTMATCH | File::FNM_EXTGLOB)
+        end
+      end
+
+      def enqueue_debounced(changes)
+        now = monotonic_now
+        @mutex.synchronize do
+          changes.each do |change|
+            @pending_debounce[change.path] = { change: change, deadline: now + @debounce }
           end
         end
       end
 
-      def scan_directory(dir, snapshot)
-        Dir.glob(File.join(dir, @glob)).each do |file|
-          next unless File.file?(file)
-
-          snapshot[file] = File.mtime(file)
+      def flush_ready_debounced
+        now = monotonic_now
+        ready = []
+        @mutex.synchronize do
+          @pending_debounce.each_value do |entry|
+            if now >= entry[:deadline]
+              ready << entry[:change]
+            end
+          end
+          ready.each { |change| @pending_debounce.delete(change.path) }
         end
+        return if ready.empty?
+
+        fire_batch_callbacks(ready)
+        fire_callbacks(ready)
+      end
+
+      def flush_debounced_changes
+        ready = []
+        @mutex.synchronize do
+          @pending_debounce.each_value { |entry| ready << entry[:change] }
+          @pending_debounce.clear
+        end
+        return if ready.empty?
+
+        fire_batch_callbacks(ready)
+        fire_callbacks(ready)
       end
 
       def fire_callbacks(changes)
@@ -129,6 +218,24 @@ module Philiprehberger
             @callbacks[:any].each { |cb| cb.call(change) }
           end
         end
+      end
+
+      def fire_batch_callbacks(changes)
+        @mutex.synchronize do
+          @callbacks[:batch].each { |cb| cb.call(changes) }
+        end
+      end
+
+      def fire_error_callbacks(exception, path)
+        @mutex.synchronize do
+          raise exception if @callbacks[:error].empty?
+
+          @callbacks[:error].each { |cb| cb.call(exception, path) }
+        end
+      end
+
+      def monotonic_now
+        Process.clock_gettime(Process::CLOCK_MONOTONIC)
       end
     end
   end
