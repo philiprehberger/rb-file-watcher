@@ -9,7 +9,7 @@ Gem::Specification.new do |spec|
   spec.email = ['me@philiprehberger.com']
   spec.summary = 'File system change detection with polling and callbacks'
   spec.description = 'Watch files and directories for changes using polling. Detects created, modified, ' \
-                       'and deleted files with configurable intervals and glob patterns.'
+                     'and deleted files with configurable intervals and glob patterns.'
   spec.homepage = 'https://philiprehberger.com/open-source-packages/ruby/philiprehberger-file_watcher'
   spec.license = 'MIT'
   spec.required_ruby_version = '>= 3.1.0'
