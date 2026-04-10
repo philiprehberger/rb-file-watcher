@@ -505,6 +505,105 @@ RSpec.describe Philiprehberger::FileWatcher do
       end
     end
 
+    describe 'pause and resume' do
+      it 'reports paused? as false initially' do
+        watcher = described_class.new(tmpdir, interval: 0.1)
+        expect(watcher.paused?).to be false
+      end
+
+      it 'reports paused? as true after pause' do
+        watcher = described_class.new(tmpdir, interval: 0.1)
+        watcher.start
+        watcher.pause
+        expect(watcher.paused?).to be true
+        watcher.stop
+      end
+
+      it 'reports paused? as false after resume' do
+        watcher = described_class.new(tmpdir, interval: 0.1)
+        watcher.start
+        watcher.pause
+        watcher.resume
+        expect(watcher.paused?).to be false
+        watcher.stop
+      end
+
+      it 'does not fire callbacks while paused' do
+        File.write(File.join(tmpdir, 'existing.txt'), 'original')
+
+        changes = []
+        watcher = described_class.new(tmpdir, interval: 0.1)
+        watcher.on(:any) { |change| changes << change }
+        watcher.start
+
+        sleep 0.15
+        watcher.pause
+        sleep 0.05
+
+        File.write(File.join(tmpdir, 'paused_file.txt'), 'created while paused')
+        File.write(File.join(tmpdir, 'existing.txt'), 'modified while paused')
+        sleep 0.3
+
+        expect(changes).to be_empty
+        watcher.stop
+      end
+
+      it 'ignores changes that occurred during pause after resume' do
+        changes = []
+        watcher = described_class.new(tmpdir, interval: 0.1)
+        watcher.on(:created) { |change| changes << change }
+        watcher.start
+
+        sleep 0.15
+        watcher.pause
+        sleep 0.05
+
+        File.write(File.join(tmpdir, 'during_pause.txt'), 'created while paused')
+        sleep 0.1
+
+        changes.clear
+        watcher.resume
+        sleep 0.3
+
+        # The file created during pause should not be reported as created
+        created_paths = changes.map(&:path)
+        expect(created_paths.none? { |p| p.end_with?('during_pause.txt') }).to be true
+
+        watcher.stop
+      end
+
+      it 'detects changes after resume' do
+        changes = []
+        watcher = described_class.new(tmpdir, interval: 0.1)
+        watcher.on(:created) { |change| changes << change }
+        watcher.start
+
+        sleep 0.15
+        watcher.pause
+        sleep 0.05
+        watcher.resume
+        sleep 0.15
+
+        File.write(File.join(tmpdir, 'after_resume.txt'), 'created after resume')
+        sleep 0.3
+
+        watcher.stop
+
+        paths = changes.map(&:path)
+        expect(paths.any? { |p| p.end_with?('after_resume.txt') }).to be true
+      end
+
+      it 'returns self from pause and resume' do
+        watcher = described_class.new(tmpdir, interval: 0.1)
+        watcher.start
+
+        expect(watcher.pause).to eq(watcher)
+        expect(watcher.resume).to eq(watcher)
+
+        watcher.stop
+      end
+    end
+
     describe 'batch with debouncing' do
       it 'fires batch callback for debounced changes' do
         batches = []

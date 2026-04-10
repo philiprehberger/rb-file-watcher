@@ -101,6 +101,24 @@ watcher.on(:any) { |change| puts change }
 watcher.start
 ```
 
+### Pause and Resume
+
+```ruby
+require "philiprehberger/file_watcher"
+
+watcher = Philiprehberger::FileWatcher::Watcher.new("./src", interval: 0.5)
+watcher.on(:any) { |change| puts change }
+watcher.start
+
+# Pause during bulk operations to avoid a flood of events
+watcher.pause
+
+FileUtils.cp_r("./backup", "./src")
+
+# Resume with a fresh snapshot — changes during pause are ignored
+watcher.resume
+```
+
 ### Snapshot
 
 ```ruby
@@ -139,6 +157,9 @@ Blocking method. Stops on `Interrupt` (Ctrl+C).
 | `#start` | Start watching in a background thread |
 | `#stop` | Stop watching and join the thread |
 | `#running?` | Returns `true` if the watcher is active |
+| `#pause` | Pause change detection; polling thread stays alive |
+| `#resume` | Resume change detection with a fresh snapshot |
+| `#paused?` | Returns `true` if the watcher is currently paused |
 | `#snapshot` | Returns a hash of `{path => {mtime:, size:}}` for all tracked files |
 
 ### `FileWatcher::Change`

@@ -24,6 +24,7 @@ module Philiprehberger
         @mutex = Mutex.new
         @thread = nil
         @running = false
+        @paused = false
         @snapshot = {}
         @pending_debounce = {}
       end
@@ -78,6 +79,33 @@ module Philiprehberger
         @mutex.synchronize { @running }
       end
 
+      # Pause change detection. The polling thread stays alive but skips detection.
+      #
+      # @return [self]
+      def pause
+        @mutex.synchronize { @paused = true }
+        self
+      end
+
+      # Resume change detection with a fresh snapshot.
+      #
+      # Changes that occurred while paused are silently ignored.
+      #
+      # @return [self]
+      def resume
+        @mutex.synchronize do
+          @snapshot = take_snapshot
+          @pending_debounce.clear
+          @paused = false
+        end
+        self
+      end
+
+      # @return [Boolean] true if the watcher is currently paused
+      def paused?
+        @mutex.synchronize { @paused }
+      end
+
       # Return a hash of all currently tracked files with their mtime and size.
       #
       # @return [Hash{String => Hash}] mapping of path to {mtime:, size:}
@@ -100,6 +128,7 @@ module Philiprehberger
         while running?
           sleep @interval
           next unless running?
+          next if paused?
 
           changes = detect_changes
           next if changes.empty?
