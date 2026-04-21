@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-10
+
+### Added
+
+- Pause and resume support via `Watcher#pause`, `Watcher#resume`, and `Watcher#paused?`
+- Changes that occur while paused are silently ignored on resume
+
 ## [0.2.1] - 2026-03-31
 
 ### Changed
