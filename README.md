@@ -133,6 +133,18 @@ snapshot.each do |path, info|
 end
 ```
 
+### Stats
+
+```ruby
+require "philiprehberger/file_watcher"
+
+watcher = Philiprehberger::FileWatcher::Watcher.new("./src")
+watcher.start
+
+stats = watcher.stats
+# => { tracked_files: 42, total_changes: 7, last_change_at: 2026-04-26 12:00:00 +0000 }
+```
+
 ## API
 
 ### `FileWatcher.watch(paths, interval:, glob:, exclude:, debounce:, &block)`
@@ -161,6 +173,7 @@ Blocking method. Stops on `Interrupt` (Ctrl+C).
 | `#resume` | Resume change detection with a fresh snapshot |
 | `#paused?` | Returns `true` if the watcher is currently paused |
 | `#snapshot` | Returns a hash of `{path => {mtime:, size:}}` for all tracked files |
+| `#stats` | Returns a hash with `:tracked_files`, `:total_changes`, and `:last_change_at` |
 
 ### `FileWatcher::Change`
 

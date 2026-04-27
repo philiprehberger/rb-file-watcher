@@ -604,6 +604,110 @@ RSpec.describe Philiprehberger::FileWatcher do
       end
     end
 
+    describe 'stats' do
+      it 'returns a hash with tracked_files, total_changes, and last_change_at' do
+        watcher = described_class.new(tmpdir, interval: 0.1)
+        watcher.start
+        sleep 0.05
+
+        result = watcher.stats
+        watcher.stop
+
+        expect(result).to be_a(Hash)
+        expect(result.keys).to contain_exactly(:tracked_files, :total_changes, :last_change_at)
+      end
+
+      it 'reports zero counts and nil timestamp before any changes' do
+        watcher = described_class.new(tmpdir, interval: 0.1)
+        watcher.start
+        sleep 0.05
+
+        result = watcher.stats
+        watcher.stop
+
+        expect(result[:tracked_files]).to eq(0)
+        expect(result[:total_changes]).to eq(0)
+        expect(result[:last_change_at]).to be_nil
+      end
+
+      it 'counts pre-existing files as tracked_files without recording changes' do
+        File.write(File.join(tmpdir, 'a.txt'), 'aaa')
+        File.write(File.join(tmpdir, 'b.txt'), 'bbb')
+
+        watcher = described_class.new(tmpdir, interval: 0.1)
+        watcher.start
+        sleep 0.05
+
+        result = watcher.stats
+        watcher.stop
+
+        expect(result[:tracked_files]).to eq(2)
+        expect(result[:total_changes]).to eq(0)
+        expect(result[:last_change_at]).to be_nil
+      end
+
+      it 'increments total_changes and updates last_change_at on detected changes' do
+        watcher = described_class.new(tmpdir, interval: 0.1)
+        watcher.on(:any) { |_change| }
+        watcher.start
+
+        sleep 0.15
+        File.write(File.join(tmpdir, 'first.txt'), 'hello')
+        sleep 0.3
+
+        first = watcher.stats
+        expect(first[:total_changes]).to be >= 1
+        expect(first[:last_change_at]).to be_a(Time)
+        expect(first[:tracked_files]).to be >= 1
+
+        previous_total = first[:total_changes]
+        previous_time = first[:last_change_at]
+
+        sleep 0.05 # ensure mtime differs
+        File.write(File.join(tmpdir, 'first.txt'), 'updated')
+        sleep 0.3
+
+        second = watcher.stats
+        watcher.stop
+
+        expect(second[:total_changes]).to be > previous_total
+        expect(second[:last_change_at]).to be >= previous_time
+      end
+
+      it 'returns a fresh hash on each call that does not mutate internal state' do
+        watcher = described_class.new(tmpdir, interval: 0.1)
+        watcher.start
+        sleep 0.05
+
+        first = watcher.stats
+        first[:tracked_files] = 9999
+        first[:total_changes] = 9999
+
+        second = watcher.stats
+        watcher.stop
+
+        expect(second[:tracked_files]).not_to eq(9999)
+        expect(second[:total_changes]).not_to eq(9999)
+        expect(first).not_to equal(second)
+      end
+
+      it 'reflects multiple distinct tracked files across watched paths' do
+        other_dir = Dir.mktmpdir('file_watcher_test_other')
+        File.write(File.join(tmpdir, 'one.txt'), 'one')
+        File.write(File.join(other_dir, 'two.txt'), 'two')
+
+        watcher = described_class.new([tmpdir, other_dir], interval: 0.1)
+        watcher.start
+        sleep 0.05
+
+        result = watcher.stats
+        watcher.stop
+        FileUtils.rm_rf(other_dir)
+
+        expect(result[:tracked_files]).to eq(2)
+      end
+    end
+
     describe 'batch with debouncing' do
       it 'fires batch callback for debounced changes' do
         batches = []

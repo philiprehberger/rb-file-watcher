@@ -27,6 +27,8 @@ module Philiprehberger
         @paused = false
         @snapshot = {}
         @pending_debounce = {}
+        @total_changes = 0
+        @last_change_at = nil
       end
 
       # Register a callback for a specific change type.
@@ -122,6 +124,22 @@ module Philiprehberger
         end
       end
 
+      # Return runtime statistics for the watcher.
+      #
+      # The returned hash is a fresh copy on each call and safe to mutate.
+      #
+      # @return [Hash] with keys :tracked_files (Integer), :total_changes (Integer),
+      #   and :last_change_at (Time or nil)
+      def stats
+        @mutex.synchronize do
+          {
+            tracked_files: @snapshot.size,
+            total_changes: @total_changes,
+            last_change_at: @last_change_at
+          }
+        end
+      end
+
       private
 
       def poll_loop
@@ -148,6 +166,10 @@ module Philiprehberger
         @mutex.synchronize do
           changes = diff_snapshots(@snapshot, current)
           @snapshot = current
+          unless changes.empty?
+            @total_changes += changes.size
+            @last_change_at = Time.now
+          end
           changes
         end
       end
